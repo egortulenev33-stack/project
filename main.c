@@ -1,0 +1,126 @@
+#include "hashtable.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+
+#define INITIAL_CAPACITY 8  // начальный размер хеш-таблицы
+#define LOAD_FACTOR_THRESHOLD 0.7 // Порог загрузки для перераспределения
+
+// Структура для элемента хеш-таблицы
+typedef struct entry {
+    int32_t key;
+    int32_t value;
+    bool occupied;  // Помечает, занят ли бакет
+} entry_t;
+
+// Структура хеш-таблицы
+struct hash_table {
+    entry_t *buckets;
+    size_t capacity;
+    size_t size;
+};
+
+// Хеш-функция
+static size_t hash(int32_t key, size_t capacity) {
+    return key % capacity;
+}
+
+// Перераспределение хеш-таблицы (увеличение ёмкости в два раза)
+static bool ht_resize(hash_table_t *ht) {
+    size_t new_capacity = ht->capacity * 2;
+    entry_t *new_buckets = (entry_t *)malloc(new_capacity * sizeof(entry_t));
+    if (!new_buckets) return false;
+
+    // Инициализируем новые бакеты
+    for (size_t i = 0; i < new_capacity; i++) {
+        new_buckets[i].occupied = false;
+    }
+
+    // Пересчитываем все элементы в новую таблицу
+    for (size_t i = 0; i < ht->capacity; i++) {
+        if (ht->buckets[i].occupied) {
+            size_t index = hash(ht->buckets[i].key, new_capacity);
+            while (new_buckets[index].occupied) {
+                index = (index + 1) % new_capacity; // Линейное пробирование
+            }
+            new_buckets[index] = ht->buckets[i];
+        }
+    }
+
+    free(ht->buckets);
+    ht->buckets = new_buckets;
+    ht->capacity = new_capacity;
+    return true;
+}
+
+// Инициализация хеш-таблицы
+hash_table_t *ht_init(size_t capacity) {
+    hash_table_t *ht = (hash_table_t *)malloc(sizeof(hash_table_t));
+    if (!ht) return NULL;
+    ht->capacity = capacity;
+    ht->size = 0;
+    ht->buckets = (entry_t *)malloc(capacity * sizeof(entry_t));
+    if (!ht->buckets) {
+        free(ht);
+        return NULL;
+    }
+    for (size_t i = 0; i < capacity; i++) {
+        ht->buckets[i].occupied = false;
+    }
+    return ht;
+}
+
+// Вставка элемента в хеш-таблицу
+bool ht_insert(hash_table_t *ht, int32_t key, int32_t value) {
+    if (!ht) return false;
+    
+    // Проверка на необходимость перераспределения
+    if ((float)ht->size / ht->capacity > LOAD_FACTOR_THRESHOLD) {
+        if (!ht_resize(ht)) {
+            return false;
+        }
+    }
+
+    size_t index = hash(key, ht->capacity);
+    size_t original_index = index;
+
+    while (ht->buckets[index].occupied) {
+        if (ht->buckets[index].key == key) {
+            ht->buckets[index].value = value;  // Перезаписать значение
+            return true;
+        }
+        index = (index + 1) % ht->capacity;  // Линейное пробирование
+        if (index == original_index) return false;  // Таблица переполнена
+    }
+
+    ht->buckets[index].key = key;
+    ht->buckets[index].value = value;
+    ht->buckets[index].occupied = true;
+    ht->size++;
+    return true;
+}
+
+// Поиск элемента в хеш-таблице
+bool ht_search(hash_table_t *ht, int32_t key, int32_t *out_value) {
+    if (!ht) return false;
+    size_t index = hash(key, ht->capacity);
+    size_t original_index = index;
+
+    while (ht->buckets[index].occupied) {
+        if (ht->buckets[index].key == key) {
+            *out_value = ht->buckets[index].value;
+            return true;
+        }
+        index = (index + 1) % ht->capacity;  // Линейное пробирование
+        if (index == original_index) return false;
+    }
+    return false;  // Ключ не найден
+}
+
+// Освобождение памяти, занятой хеш-таблицей
+void ht_free(hash_table_t *ht) {
+    if (ht) {
+        free(ht->buckets);
+        free(ht);
+    }
+}
